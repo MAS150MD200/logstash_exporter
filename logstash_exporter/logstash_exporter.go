@@ -11,12 +11,18 @@ import (
 )
 
 var (
-	addr = flag.String("listen-address", ":8080", "The adress to listen on for HTTP requests.")
-	redis_queue = flag.String("redis-queue", "logstash-stats", "The adress to listen on for HTTP requests.")
+	addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
+	redis_queue = flag.String("redis-queue", "logstash-stats", "Message queue between logstash and the exporter.")
 	
-	processedLogEntries = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "logstash_events_processed_total",
-		Help: "xxx"})
+	processedLogEntries = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: "logstash",
+			Subsystem: "exporter",
+			Name: "events_processed_total",
+			Help: "Total number of events processed by logstash.",
+		},
+		[]string{"host", "type"},
+	)
 	lastLogEntry = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "logstash_events_last_event",
 		Help: "xxx"})
@@ -36,8 +42,10 @@ func init() {
 }
 
 func main() {
+	flag.Parse()
+	
 	go func() {
-		fmt.Printf("--> Starting metric server...")
+		fmt.Printf("--> Starting metric server on %s...\n", *addr)
 		http.Handle("/metrics", prometheus.Handler())
 		err := http.ListenAndServe(*addr, nil)
 		if err != nil {
@@ -53,7 +61,7 @@ func main() {
 		defer client.Close()
 
 		for {
-			fmt.Printf("--> Start listening for new entires in the queue %s...\n",
+			fmt.Printf("--> Start listening for new entires in the queue \"%s\"...\n",
 				*redis_queue)
 			val, err := redis.Strings(client.Do("BLPOP", *redis_queue, "0"))
 			if(err != nil) {
@@ -85,8 +93,18 @@ func main() {
 			}
 			lastLogEntry.Set(float64(timestamp.Unix()))
 
+			// Extract host and type from json
+			host := m["host"]
+			if host == nil {
+				host = "n/a"
+			}
+			typ := m["type"]
+			if typ == nil {
+				typ = "n/a"
+			}
+
 			// Incement the Prometheus counter about total processed messages.
-			processedLogEntries.Inc()
+			processedLogEntries.WithLabelValues(host.(string), typ.(string)).Add(1)
 		}
 		
 	}
