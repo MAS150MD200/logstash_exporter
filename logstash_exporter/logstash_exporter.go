@@ -81,18 +81,6 @@ func main() {
 			}
 			//fmt.Println(m)
 
-			// Extract the last timestamp from logstash entry
-			timestamp := time.Now().UTC()
-			json_timestamp := m["@timestamp"]
-			if json_timestamp != nil {
-				timestamp, err = time.Parse(time.RFC3339, json_timestamp.(string))
-				if err != nil {
-					fmt.Printf("Unable to parse timestamp: %s\n", err.Error())
-					timestamp = time.Now().UTC()
-				}
-			}
-			lastLogEntry.Set(float64(timestamp.Unix()))
-
 			// Extract host and type from json
 			host := m["host"]
 			if host == nil {
@@ -105,6 +93,18 @@ func main() {
 
 			// Incement the Prometheus counter about total processed messages.
 			processedLogEntries.WithLabelValues(host.(string), typ.(string)).Add(1)
+			
+			// Extract the last timestamp from logstash entry
+			timestamp := time.Now().UTC()
+			json_timestamp := m["@timestamp"]
+			if json_timestamp != nil {
+				timestamp, err = time.Parse(time.RFC3339, json_timestamp.(string))
+				if err != nil {
+					fmt.Printf("Unable to parse timestamp: %s\n", err.Error())
+					timestamp = time.Now().UTC()
+				}
+			}
+			lastLogEntry.Set(float64(timestamp.Unix()))
 		}
 		
 	}
