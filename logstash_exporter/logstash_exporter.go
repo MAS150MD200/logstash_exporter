@@ -31,19 +31,22 @@ var (
 			Help: "Timestamp of the last seen event in the redis queue.",
 		},
 	)
-/*
-	rpcDurationsHistogram = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "rpc_durations_histogram_microseconds",
-		Help:    "RPC latency distributions.",
-		Buckets: prometheus.LinearBuckets(10-5*10, .5*10, 20),
-	})
-*/
+	parsingDurationHistogram = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Namespace: "logstash",
+			Subsystem: "exporter",
+			Name: "parsing_durations_histogram_seconds",
+			Help: "Logstash parsing latency.",
+			Buckets: prometheus.LinearBuckets(10-5*10, .5*10, 20),
+		},
+		[]string{"host", "type"},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(processedLogEntries)
 	prometheus.MustRegister(lastLogEntry)
-	//prometheus.MustRegister(rpcDurationsHistogram)
+	prometheus.MustRegister(parsingDurationHistogram)
 }
 
 func main() {
@@ -109,6 +112,12 @@ func main() {
 					timestamp = time.Now().UTC()
 				}
 			}
+
+			parsingDurationHistogram.WithLabelValues(host.(string), typ.(string)).Observe(
+				float64(time.Since(timestamp)) / float64(time.Second),
+			)
+
+			// Set the last seen timestamp
 			lastLogEntry.Set(float64(timestamp.Unix()))
 		}
 		
