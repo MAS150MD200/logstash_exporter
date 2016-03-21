@@ -23,9 +23,14 @@ var (
 		},
 		[]string{"host", "type"},
 	)
-	lastLogEntry = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "logstash_events_last_event",
-		Help: "xxx"})
+	lastLogEntry = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "logstash",
+			Subsystem: "exporter",
+			Name: "last_seen_event",
+			Help: "Timestamp of the last seen event in the redis queue.",
+		},
+	)
 /*
 	rpcDurationsHistogram = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "rpc_durations_histogram_microseconds",
