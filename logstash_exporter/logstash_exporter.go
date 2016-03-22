@@ -96,17 +96,19 @@ func main() {
 			//fmt.Println(m)
 
 			// Extract host and type from json
-			host := m["host"]
-			if host == nil {
-				host = "n/a"
+			host_raw := m["host"]
+			if host_raw == nil {
+				host_raw = "n/a"
 			}
-			typ := m["type"]
-			if typ == nil {
-				typ = "n/a"
+			host := host_raw.(string)
+			typ_raw := m["type"]
+			if typ_raw == nil {
+				typ_raw = "n/a"
 			}
+			typ := typ_raw.(string)
 
 			// Incement the Prometheus counter about total processed messages.
-			processedLogEntries.WithLabelValues(host.(string), typ.(string)).Add(1)
+			processedLogEntries.WithLabelValues(host, typ).Add(1)
 			
 			// Extract the last timestamp from logstash entry
 			timestamp := time.Now().UTC()
@@ -119,12 +121,12 @@ func main() {
 				}
 			}
 
-			parsingDurationHistogram.WithLabelValues(host.(string), typ.(string)).Observe(
+			parsingDurationHistogram.WithLabelValues(host, typ).Observe(
 				float64(time.Since(timestamp)) / float64(time.Second),
 			)
 
 			// Set the last seen timestamp
-			lastLogEntry.WithLabelValues(host.(string), typ.(string)).Set(float64(timestamp.Unix()))
+			lastLogEntry.WithLabelValues(host, typ).Set(float64(timestamp.Unix()))
 		}
 
 		sleepTime := 10
