@@ -23,13 +23,14 @@ var (
 		},
 		[]string{"host", "type"},
 	)
-	lastLogEntry = prometheus.NewGauge(
+	lastLogEntry = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Namespace: "logstash",
 			Subsystem: "exporter",
 			Name: "last_seen_event",
 			Help: "Timestamp of the last seen event in the redis queue.",
 		},
+		[]string{"host", "type"},
 	)
 	parsingDurationHistogram = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
@@ -38,7 +39,8 @@ var (
 			Name: "parsing_durations_histogram_seconds",
 			Help: "Logstash parsing latency.",
 			Buckets: prometheus.LinearBuckets(10-5*10, .5*10, 20),
-		},		[]string{"host", "type"},
+		},
+		[]string{"host", "type"},
 	)
 )
 
@@ -122,7 +124,7 @@ func main() {
 			)
 
 			// Set the last seen timestamp
-			lastLogEntry.Set(float64(timestamp.Unix()))
+			lastLogEntry.WithLabelValues(host.(string), typ.(string)).Set(float64(timestamp.Unix()))
 		}
 
 		sleepTime := 10
