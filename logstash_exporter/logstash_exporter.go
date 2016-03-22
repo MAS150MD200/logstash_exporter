@@ -38,8 +38,7 @@ var (
 			Name: "parsing_durations_histogram_seconds",
 			Help: "Logstash parsing latency.",
 			Buckets: prometheus.LinearBuckets(10-5*10, .5*10, 20),
-		},
-		[]string{"host", "type"},
+		},		[]string{"host", "type"},
 	)
 )
 
@@ -73,10 +72,15 @@ func main() {
 				*redis_queue)
 			val, err := redis.Strings(client.Do("BLPOP", *redis_queue, "0"))
 			if(err != nil) {
-				fmt.Printf("failed to retreive keys from redis: %s\n", err.Error())
+				sleepTime := 5
+				fmt.Printf("Failed to retreive keys from redis: %s. Sleeping for %d secs.\n",
+					err.Error(), sleepTime)
+				time.Sleep(time.Duration(sleepTime) * time.Second)
+				continue
 			}
 			if len(val) != 2 {
-				fmt.Printf("failed to convert redis response.\n")
+				fmt.Printf("failed to convert redis response: %s\n", val)
+				continue
 			}
 
 			fmt.Printf("--> Processing new entry in the queue.\n")
@@ -120,7 +124,10 @@ func main() {
 			// Set the last seen timestamp
 			lastLogEntry.Set(float64(timestamp.Unix()))
 		}
-		
+
+		sleepTime := 10
+		fmt.Printf("Sleeping for %d seconds.\n", sleepTime)
+		time.Sleep(time.Duration(10) * time.Second)
 	}
 
 }
