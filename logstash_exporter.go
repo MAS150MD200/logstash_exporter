@@ -13,7 +13,8 @@ import (
 
 var (
 	addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
-	redis_queue = flag.String("redis-queue", "logstash-stats", "Message queue between logstash and the exporter.")
+	redis_stats_queue = flag.String("redis-stats-queue", "logstash-prometheus-stats", "Message queue between logstash and the exporter.")
+	redis_staging_queue = flag.String("redis-staging-queue", "logstash-staging", "Message queue between staging logstash and logstash.")
 	debug = flag.Bool("debug", false, "Enable debug logging.")
 
 	logger *log.Logger
@@ -46,12 +47,39 @@ var (
 		},
 		[]string{"host", "type"},
 	)
+	stagingEntries = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Namespace: "logstash",
+			Subsystem: "exporter",
+			Name: "staging_queue_entries",
+			Help: "Current number of pending events in the logstash staging queue.",
+		},
+	)
 )
 
 func init() {
 	prometheus.MustRegister(processedLogEntries)
 	prometheus.MustRegister(lastLogEntry)
 	prometheus.MustRegister(parsingDurationHistogram)
+	prometheus.MustRegister(stagingEntries)
+}
+
+func checkStagingQueue() error {
+	if(*debug) {
+		logger.Printf("Checking content of logstash staging queue %s.", *redis_staging_queue)
+	}
+	
+	client, err := redis.Dial("tcp", ":6379")
+	val, err := redis.Int64(client.Do("LLEN", *redis_staging_queue))
+	if err != nil {
+		logger.Printf("Failed to read logstash staging queue: %s: %s", *redis_staging_queue, err)
+		return err
+	}
+
+	logger.Printf("Logstash staging queue contains %d elements.", val)
+	stagingEntries.Set(float64(val))
+	
+	return nil
 }
 
 func parsingAndUpdating(raw string) error {
@@ -92,6 +120,9 @@ func parsingAndUpdating(raw string) error {
 			timestamp = time.Now().UTC()
 		}
 	}
+	if(*debug) {
+		logger.Printf("Timestamp for entry is: %s", timestamp)
+	}
 
 	parsingDurationHistogram.WithLabelValues(host, typ).Observe(
 		float64(time.Since(timestamp)) / float64(time.Second),
@@ -112,6 +143,15 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize the system logger: %s\n", err)
 	}
+
+	// Create a timer to monitor the Redis staging queue
+	t := time.NewTicker(time.Second*1)
+	go func() {
+		for {
+			<- t.C
+			checkStagingQueue()
+		}
+	}()
 
 	// Execute a separate go function for a non blocking webservice
 	go func() {
@@ -136,10 +176,10 @@ func main() {
 
 		for {
 			if(*debug) {
-				logger.Printf("Waiting for new entry in Redis list queue \"%s\"...", *redis_queue)
+				logger.Printf("Waiting for new entry in Redis list queue \"%s\"...", *redis_stats_queue)
 			}
 
-			val, err := redis.Strings(client.Do("BLPOP", *redis_queue, "0"))
+			val, err := redis.Strings(client.Do("BLPOP", *redis_stats_queue, "0"))
 			if(err != nil) {
 				sleepTime := 5
 				logger.Printf("Failed to retreive keys from Redis: %s. Sleeping for %d secs.\n",
