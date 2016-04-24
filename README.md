@@ -19,40 +19,40 @@ staging logstash -> redis (queue "logstash-staging") -> logstash (filters/grok/e
 
 Staging Logstash:
 ```
-   output {
-      redis {
-         host => ["127.0.0.1"]
-	 key => "logstash-staging"
-	 data_type => "list"
-      }
+output {
+   redis {
+      host => ["127.0.0.1"]
+      key => "logstash-staging"
+      data_type => "list"
    }
+}
 ```								    
 
 Logstash
 ```
-    input {
-       redis {
-          host => ["127.0.0.1"]
-	  key => "logstash-staging"
-	  data_type => "list"
-       }
-    }
-    filter {
-       ...
-    }
-    output {
-       elasticsearch {
-          ...
-       }
+input {
+   redis {
+      host => ["127.0.0.1"]
+      key => "logstash-staging"
+      data_type => "list"
+   }
+}
+filter {
+   ...
+}
+output {
+   elasticsearch {
+      ...
+   }
 
-       # write the stats at the end, to now the total latency
-       redis {
-          host => ["127.0.0.1"]
-	  key => "logstash-prometheus-stats"
-	  data_type => "list"
-       }
+   # write the stats at the end, to now the total latency
+   redis {
+      host => ["127.0.0.1"]
+      key => "logstash-prometheus-stats"
+      data_type => "list"
+   }
 
-    }
+}
 ```
 
 ## Building and running
