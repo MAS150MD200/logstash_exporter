@@ -76,7 +76,9 @@ func checkStagingQueue() error {
 		return err
 	}
 
-	logger.Printf("Logstash staging queue contains %d elements.", val)
+	if(*debug) {
+		logger.Printf("Logstash staging queue contains %d elements.", val)
+	}
 	stagingEntries.Set(float64(val))
 	
 	return nil
