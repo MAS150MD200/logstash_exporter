@@ -10,9 +10,9 @@ As soon as a new event enter the list, the exporter picks this entry and increme
 ELK stack overview and exporter:
 
 ```
-   staging logstash -> redis (queue "logstash-staging") -> logstash (filters/grok/etc.) -> elasticsearch
-                                                           -> redis (queue "logstash-prometheus-stats") => number of events/logstash duration
-                       <= logstash_exporter: count elements in logstash-staging queue >10 problem with second logstash instance.
+staging logstash -> redis (queue "logstash-staging") -> logstash (filters/grok/etc.) -> elasticsearch
+                                                        -> redis (queue "logstash-prometheus-stats") => number of events/logstash duration
+                    <= logstash_exporter: count elements in logstash-staging queue >10 problem with second logstash instance.
 ```                       
 
 ## Configure logstash
