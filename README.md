@@ -58,6 +58,6 @@ output {
 ## Building and running
 
 ```
-    go build logstash_exporter
-    ./logstash_exporter
+go install logstash_exporter
+bin/logstash_exporter
 ```
