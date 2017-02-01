@@ -1,30 +1,32 @@
 package main
 
 import (
-	"flag"
-	"net/http"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/garyburd/redigo/redis"
 	"encoding/json"
-	"time"
+	"flag"
+	"github.com/garyburd/redigo/redis"
+	"github.com/prometheus/client_golang/prometheus"
 	"log"
-	"log/syslog"
+	"net/http"
+	"os"
+	"time"
 )
 
 var (
-	addr = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
-	redis_stats_queue = flag.String("redis-stats-queue", "logstash-prometheus-stats", "Message queue between logstash and the exporter.")
+	addr                = flag.String("listen-address", ":8080", "The address to listen on for HTTP requests.")
+	redisAddr           = flag.String("redis.addr", "127.0.0.1:6379", "Address of the redis server.")
+	redisPassword       = flag.String("redis.password", "", "Password for the redis server.")
+	redis_stats_queue   = flag.String("redis-stats-queue", "logstash-prometheus-stats", "Message queue between logstash and the exporter.")
 	redis_staging_queue = flag.String("redis-staging-queue", "logstash-staging", "Message queue between staging logstash and logstash.")
-	debug = flag.Bool("debug", false, "Enable debug logging.")
+	debug               = flag.Bool("debug", false, "Enable debug logging.")
 
 	logger *log.Logger
-	
+
 	processedLogEntries = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Namespace: "logstash",
 			Subsystem: "exporter",
-			Name: "events_processed_total",
-			Help: "Total number of events processed by logstash.",
+			Name:      "events_processed_total",
+			Help:      "Total number of events processed by logstash.",
 		},
 		[]string{"host", "type"},
 	)
@@ -32,8 +34,8 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: "logstash",
 			Subsystem: "exporter",
-			Name: "last_seen_event",
-			Help: "Timestamp of the last seen event in the redis queue.",
+			Name:      "last_seen_event",
+			Help:      "Timestamp of the last seen event in the redis queue.",
 		},
 		[]string{"host", "type"},
 	)
@@ -41,9 +43,9 @@ var (
 		prometheus.HistogramOpts{
 			Namespace: "logstash",
 			Subsystem: "exporter",
-			Name: "parsing_durations_histogram_seconds",
-			Help: "Logstash parsing latency.",
-			Buckets: prometheus.LinearBuckets(10-5*10, .5*10, 20),
+			Name:      "parsing_durations_histogram_seconds",
+			Help:      "Logstash parsing latency.",
+			Buckets:   prometheus.LinearBuckets(10-5*10, .5*10, 20),
 		},
 		[]string{"host", "type"},
 	)
@@ -51,8 +53,8 @@ var (
 		prometheus.GaugeOpts{
 			Namespace: "logstash",
 			Subsystem: "exporter",
-			Name: "staging_queue_entries",
-			Help: "Current number of pending events in the logstash staging queue.",
+			Name:      "staging_queue_entries",
+			Help:      "Current number of pending events in the logstash staging queue.",
 		},
 	)
 )
@@ -65,22 +67,29 @@ func init() {
 }
 
 func checkStagingQueue() error {
-	if(*debug) {
+	if *debug {
 		logger.Printf("Checking content of logstash staging queue %s.", *redis_staging_queue)
 	}
-	
-	client, err := redis.Dial("tcp", ":6379")
+
+	client, err := redis.Dial("tcp", *redisAddr)
+	if *redisPassword != "" {
+		if _, err := client.Do("AUTH", *redisPassword); err != nil {
+			logger.Printf("Failed to authenticate against Redis server: %s", err.Error())
+			return err
+		}
+	}
+
 	val, err := redis.Int64(client.Do("LLEN", *redis_staging_queue))
 	if err != nil {
 		logger.Printf("Failed to read logstash staging queue: %s: %s", *redis_staging_queue, err)
 		return err
 	}
 
-	if(*debug) {
+	if *debug {
 		logger.Printf("Logstash staging queue contains %d elements.", val)
 	}
 	stagingEntries.Set(float64(val))
-	
+
 	return nil
 }
 
@@ -93,7 +102,7 @@ func parsingAndUpdating(raw string) error {
 		logger.Printf("JSON parser failed for %s: %s\n", raw, err)
 		return err
 	}
-	if(*debug) {
+	if *debug {
 		logger.Printf("Raw string evaluated as %#v", m)
 	}
 
@@ -111,7 +120,7 @@ func parsingAndUpdating(raw string) error {
 
 	// Incement the Prometheus counter about total processed messages.
 	processedLogEntries.WithLabelValues(host, typ).Add(1)
-			
+
 	// Extract the last timestamp from logstash entry
 	timestamp := time.Now().UTC()
 	json_timestamp := m["@timestamp"]
@@ -122,7 +131,7 @@ func parsingAndUpdating(raw string) error {
 			timestamp = time.Now().UTC()
 		}
 	}
-	if(*debug) {
+	if *debug {
 		logger.Printf("Timestamp for entry is: %s", timestamp)
 	}
 
@@ -140,17 +149,13 @@ func main() {
 	flag.Parse()
 
 	// Initialize the system logger
-	var err error
-	logger, err = syslog.NewLogger(syslog.LOG_INFO, 0)
-	if err != nil {
-		log.Fatalf("Failed to initialize the system logger: %s\n", err)
-	}
+	logger = log.New(os.Stdout, "", log.LstdFlags)
 
 	// Create a timer to monitor the Redis staging queue
-	t := time.NewTicker(time.Second*1)
+	t := time.NewTicker(time.Second * 1)
 	go func() {
 		for {
-			<- t.C
+			<-t.C
 			checkStagingQueue()
 		}
 	}()
@@ -158,7 +163,7 @@ func main() {
 	// Execute a separate go function for a non blocking webservice
 	go func() {
 		defer logger.Fatalf("HTTP server died unexpected.")
-		
+
 		logger.Printf("Starting HTTP server on %s...\n", *addr)
 		http.Handle("/metrics", prometheus.Handler())
 		err := http.ListenAndServe(*addr, nil)
@@ -169,20 +174,26 @@ func main() {
 
 	for {
 		logger.Printf("Start Redis queue listener...")
-		
-		client, err := redis.Dial("tcp", ":6379")
+
+		client, err := redis.Dial("tcp", *redisAddr)
 		if err != nil {
 			panic(err)
 		}
 		defer client.Close()
 
+		if *redisPassword != "" {
+			if _, err := client.Do("AUTH", *redisPassword); err != nil {
+				panic(err)
+			}
+		}
+
 		for {
-			if(*debug) {
+			if *debug {
 				logger.Printf("Waiting for new entry in Redis list queue \"%s\"...", *redis_stats_queue)
 			}
 
 			val, err := redis.Strings(client.Do("BLPOP", *redis_stats_queue, "0"))
-			if(err != nil) {
+			if err != nil {
 				sleepTime := 5
 				logger.Printf("Failed to retreive keys from Redis: %s. Sleeping for %d secs.\n",
 					err.Error(), sleepTime)
@@ -194,11 +205,11 @@ func main() {
 				continue
 			}
 
-			if(*debug) {
+			if *debug {
 				logger.Printf("Processing new queue entry: %#v", val)
 			}
 			parsingAndUpdating(val[1])
-			if(*debug) {
+			if *debug {
 				logger.Printf("Processing of queue entry finished")
 			}
 		}
